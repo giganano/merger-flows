@@ -2,6 +2,8 @@
 merger-flows.sublime-workspace
 merger-flows.sublime-project
 **/*.vice/**
+**/*_analogdata.out
+**/*_gasvelocities.out
 **/.ipynb_checkpoints/**
 **/__pycache__/**
 
