@@ -1,5 +1,6 @@
 
 # from .models.utils import modified_exponential
+from .models.utils import logistic
 import math as m
 import vice
 
@@ -36,10 +37,15 @@ CGM_METALLICITY_GROWTH_TIMESCALE = 3
 
 
 
+class logistic_amd(logistic):
+
+	def __call__(self, radius, time):
+		return super().__call__(radius)
 
 
 # --------------- RADIAL GAS FLOWS --------------- #
 RADIAL_GAS_FLOWS = "angular_momentum_dilution" # None turns them off
+# RADIAL_GAS_FLOWS = "constant"
 # RADIAL_GAS_FLOWS = None
 RADIAL_GAS_FLOW_ONSET = 1 # Gyr -- radial flow starts 1 Gyr in
 
@@ -54,7 +60,9 @@ RADIAL_GAS_FLOW_DVDR = -0.05
 # used when RADIAL_GAS_FLOWS = "angular_momentum_dilution"
 # RADIAL_GAS_FLOW_BETA_PHI_IN = 0.5
 # RADIAL_GAS_FLOW_BETA_PHI_IN = 0.6
-RADIAL_GAS_FLOW_BETA_PHI_IN = 0.8
+# RADIAL_GAS_FLOW_BETA_PHI_IN = 0.8
+RADIAL_GAS_FLOW_BETA_PHI_IN = logistic_amd(midpoint = 12.5, scale = 2.5,
+	minimum = 0.8, maximum = 1)
 # def RADIAL_GAS_FLOW_BETA_PHI_IN(r, t):
 	# return 0.3 + 0.4 * (1 - m.exp(-t / 2))
 RADIAL_GAS_FLOW_BETA_PHI_OUT = 0

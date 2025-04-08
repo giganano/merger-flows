@@ -118,24 +118,39 @@ class diskmodel(vice.milkyway):
 		for i in range(self.n_zones):
 			area = m.pi * ZONE_WIDTH**2 * ((i + 1)**2 - i**2)
 			self.zones[i].Mg0 = 0
-			if self.mode == "ifr" and zone_width * (i + 0.5) > MAX_SF_RADIUS:
-				self.zones[i].tau_star = float("inf")
-			# 	# self.zones[i].tau_star = 100
-			else:
-				self.zones[i].tau_star = sfe.sfe(area, mode = self.mode)
+			self.zones[i].tau_star = sfe.sfe(area, mode = self.mode)
+			# if self.mode == "ifr" and zone_width * (i + 0.5) > MAX_SF_RADIUS:
+			# 	self.zones[i].tau_star = float("inf")
+			# else:
+			# 	self.zones[i].tau_star = sfe.sfe(area, mode = self.mode)
 
 		# setup radial gas flow
 		if inputs.RADIAL_GAS_FLOWS is not None:
 			kwargs = {
 				"onset": inputs.RADIAL_GAS_FLOW_ONSET,
 				"dr": zone_width,
-				"dt": self.dt,
-				"outfilename": "%s_gasvelocities.out" % (self.name)
+				"dt": self.dt
 			}
+			if self.mode == "ifr":
+				self.migration.gas.callback = True
+				kwargs["outfilename"] = None
+			else:
+				kwargs["outfilename"] = "%s_gasvelocities.out" % (self.name)
 			callkwargs = {}
 			if inputs.RADIAL_GAS_FLOWS == "constant":
-				self.radialflow = gasflows.constant(inputs.RADIAL_GAS_FLOW_SPEED,
-					**kwargs)
+				if self.mode == "ifr":
+					for i in range(self.n_zones):
+						for j in range(self.n_zones):
+							if abs(i - j) == 1:
+								self.migration.gas[i][j] = gasflows.constant_ifrmode(
+									i * zone_width,
+									inputs.RADIAL_GAS_FLOW_SPEED,
+									inward = i > j,
+									**kwargs)
+							else: pass
+				else:
+					self.radialflow = gasflows.constant(
+						inputs.RADIAL_GAS_FLOW_SPEED, **kwargs)
 			elif inputs.RADIAL_GAS_FLOWS == "oscillatory":
 				self.radialflow = gasflows.oscillatory(
 					inputs.RADIAL_GAS_FLOW_MEAN,
@@ -148,10 +163,17 @@ class diskmodel(vice.milkyway):
 					**kwargs)
 			elif inputs.RADIAL_GAS_FLOWS == "angular_momentum_dilution":
 				if self.mode == "ifr":
-					self.radialflow = gasflows.amd_ifrmode(self,
-						beta_phi_in = inputs.RADIAL_GAS_FLOW_BETA_PHI_IN,
-						beta_phi_out = inputs.RADIAL_GAS_FLOW_BETA_PHI_OUT,
-						**kwargs)
+					for i in range(self.n_zones):
+						for j in range(self.n_zones):
+							if abs(i - j) == 1:
+								self.migration.gas[i][j] = gasflows.amd_ifrmode(
+									i * zone_width,
+									self,
+									inward = i > j,
+									beta_phi_in = inputs.RADIAL_GAS_FLOW_BETA_PHI_IN,
+									beta_phi_out = inputs.RADIAL_GAS_FLOW_BETA_PHI_OUT,
+									**kwargs)
+							else: pass
 				else:
 					self.radialflow = gasflows.amd_sfrmode(self,
 						beta_phi_in = inputs.RADIAL_GAS_FLOW_BETA_PHI_IN,
@@ -168,9 +190,19 @@ class diskmodel(vice.milkyway):
 					"Unrecognized radial gas flow setting: %s" % (
 						inputs.RADIAL_GAS_FLOWS))
 
-			if self.mode == "ifr": self.radialflow.normalize()
+			if self.mode == "ifr":
+				self.outfile = open("%s_gasvelocities.out" % (self.name), 'w')
+				self.outfile.write("# Time [Gyr]    ")
+				self.outfile.write("Radius [kpc]    ")
+				self.outfile.write("ISM radial velocity [kpc/Gyr]\n")
+				for i in range(self.n_zones):
+					for j in range(self.n_zones):
+						if isinstance(self.migration.gas[i][j], gasflows.base):
+							self.migration.gas[i][j].outfile = self.outfile
+						else: pass
+			else:
+				self.radialflow.setup(self, **callkwargs)
 
-			self.radialflow.setup(self, **callkwargs)
 		else:
 			pass
 
@@ -202,6 +234,7 @@ class diskmodel(vice.milkyway):
 	def run(self, *args, **kwargs):
 		out = super().run(*args, **kwargs)
 		self.migration.stars.close_file()
+		if self.mode == "ifr": self.outfile.close()
 		return out
 
 	@classmethod
@@ -281,11 +314,13 @@ class star_formation_history:
 		else:
 			idx = get_bin_number(self._radii, radius)
 			if idx != -1:
-				return gradient(radius) * interpolate(self._radii[idx],
+				result = gradient(radius) * interpolate(self._radii[idx],
 					self._evol[idx](time), self._radii[idx + 1],
 					self._evol[idx + 1](time), radius)
 			else:
-				return gradient(radius) * interpolate(self._radii[-2],
+				result = gradient(radius) * interpolate(self._radii[-2],
 					self._evol[-2](time), self._radii[-1], self._evol[-1](time),
 					radius)
+			if result < 0: result = 0
+			return result
 

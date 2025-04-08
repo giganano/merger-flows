@@ -127,6 +127,19 @@ timestep sizes to assess the impact of numerical artifacts.""", ScienceWarning)
 					mw_model.migration.gas[i][j] = 0
 
 
+	@staticmethod
+	def area_fraction(radius, vgas, dr = 0.1):
+		denominator = (radius + dr)**2 - radius**2
+		if vgas > 0:
+			numerator = (radius + dr)**2 - (
+				radius + dr - vgas * base.NORMTIME)**2
+		elif vgas < 0:
+			numerator = (radius - vgas * base.NORMTIME)**2 - radius**2
+		else:
+			numerator = 0
+		return numerator / denominator
+
+
 class constant(base):
 
 	def __init__(self, speed, onset = 1, dr = 0.1, dt = 0.01,
@@ -135,6 +148,38 @@ class constant(base):
 			outfilename = outfilename)
 		self.speed = speed
 
+
+class constant_ifrmode(constant):
+
+	def __init__(self, radius, *args, inward = True, **kwargs):
+		self.radius = radius
+		self.inward = inward
+		super().__init__(*args, **kwargs)
+
+	def __call__(self, **ism_state):
+		if ism_state["time"] < self.onset: return 0
+		if self.speed != 0:
+			if (self.inward and self.speed < 0) or (
+				not self.inward and self.speed > 0):
+				self.write(ism_state["time"], [self.radius], [self.speed])
+				frac = self.area_fraction(self.radius, self.speed, dr = self.dr)
+				if frac < 0:
+					frac = 0
+				elif frac > 1 - 1.0e-9:
+					frac = 1 - 1.0e-9
+				else: pass
+				return frac
+			else:
+				return 0
+		else:
+			# without this seemingly useless if-statement, both inward and
+			# outward components write to the output file, resulting in
+			# duplicate entries of zero velocity.
+			if self.inward: self.write(ism_state["time"], [self.radius], [0])
+			return 0
+
+
+class constant_sfrmode(constant):
 
 	def __call__(self, time, **kwargs):
 		radii = [self.dr * i for i in range(int(MAX_RADIUS / self.dr))]
@@ -226,216 +271,56 @@ class amd(base):
 
 class amd_ifrmode(amd):
 
-	def __call__(self, time):
-		radii = [self.dr * i for i in range(self.mw_model.n_zones)]
-		vgas = []
-		for i in range(len(radii)):
-			vgas.append(self._velocities[i](time))
-		self.write(time, radii, vgas)
-		return [radii, vgas]
+	def __init__(self, radius, *args, inward = True, **kwargs):
+		self.radius = radius
+		self.inward = inward
+		super().__init__(*args, **kwargs)
 
-
-	def evolve(self, recycling = 0.4):
+	def __call__(self, **ism_state):
+		if ism_state["time"] < self.onset: return 0
 		if callable(self.beta_phi_in):
+			beta_phi_in = self.beta_phi_in(self.radius, ism_state["time"])
+		else:
 			beta_phi_in = self.beta_phi_in
-		else:
-			beta_phi_in = lambda r, t: self.beta_phi_in
 		if callable(self.beta_phi_out):
-			beta_phi_out = self.beta_phi_out
+			beta_phi_out = self.beta_phi_out(self.radius, ism_state["time"])
 		else:
-			beta_phi_out = lambda r, t: self.beta_phi_out
-		n_zones = self.mw_model.n_zones
-		evol = []
-		for i in range(n_zones):
-			if callable(self.mw_model.zones[i].eta):
-				eta = self.mw_model.zones[i].eta(time)
+			beta_phi_out = self.beta_phi_out
+		vgas = ism_state["ofr"] / ism_state["mgas"] * (1 - beta_phi_out)
+		vgas -= ism_state["ifr"] / ism_state["mgas"] * (1 - beta_phi_in)
+		vgas *= 1e9 # kpc/yr -> kpc/Gyr ~ km/s
+		vgas *= self.radius
+		if vgas != 0:
+			if (self.inward and vgas < 0) or (not self.inward and vgas > 0):
+				self.write(ism_state["time"], [self.radius], [vgas])
+				frac = self.area_fraction(self.radius, vgas, dr = self.dr)
+				if frac < 0:
+					frac = 0
+				elif frac > 1 - 1.0e-9:
+					frac = 1 - 1.0e-9
+				else: pass
+				return frac
 			else:
-				eta = self.mw_model.zones[i].eta
-			if callable(self.mw_model.zones[i].tau_star):
-				tau_star = self.mw_model.zones[i].tau_star(0,
-					self.mw_model.zones[i].Mg0)
-			else:
-				tau_star = self.mw_model.zones[i].tau_star
-			sfr = self.mw_model.zones[i].Mg0 / tau_star
-			ofr = eta * sfr
-			evol.append({
-				"time": [0],
-				"ifr": [self.mw_model.zones[i].func(0)],
-				"mgas": [self.mw_model.zones[i].Mg0],
-				"tau_star": [tau_star],
-				"mstar": [0],
-				"sfr": [sfr],
-				"ofr": [ofr],
-				"vgas": [0]
-			})
-
-		time = 0
-		while time < END_TIME:
-			vgas = n_zones * [0.]
-			mu = n_zones * [0.]
-			if time >= self.onset:
-				for i in range(n_zones):
-					radius = self.dr * (i + 0.5)
-					# if radius < MAX_SF_RADIUS:
-					vgas[i] = evol[i]["ofr"][-1] * (
-						1 - beta_phi_out(radius, time))
-					vgas[i] -= evol[i]["ifr"][-1] * (
-						1 - beta_phi_in(radius, time))
-					vgas[i] *= radius / evol[i]["mgas"][-1]
-					# else:
-					# 	vgas[i] = 0
-					if abs(vgas[i]) > self.dr / self.dt:
-						sgn_vgas = int(vgas[i] > 0) - int(vgas[i] < 0)
-						vgas[i] = sgn_vgas * self.dr / self.dt - 1.e9
-					else: pass
-				for i in range(n_zones):
-					radius = self.dr * (i + 0.5)
-					if radius < MAX_SF_RADIUS and vgas[i] != 0:
-						dlnmgas_dr = (evol[i + 1]["mgas"][-1] - 
-							evol[i]["mgas"][-1]) / (
-							evol[i]["mgas"][-1] * self.dr)
-						if radius + self.dr < MAX_SF_RADIUS:
-							dlnvgas_dr = (vgas[i + 1] - vgas[i]) / (
-								vgas[i] * self.dr)
-						else:
-							dlnvgas_dr = 0
-						mu[i] = -evol[i]["tau_star"][-1] * vgas[i] * (
-							dlnmgas_dr + dlnvgas_dr)
-					else:
-						mu[i] = 0
-					if mu[i] > 10:
-						mu[i] = 10
-					elif mu[i] < -10:
-						mu[i] = -10
-					else: pass
-			else: pass
-
-			for i in range(n_zones):
-				if callable(self.mw_model.zones[i].eta):
-					eta = self.mw_model.zones[i].eta(time)
-				else:
-					eta = self.mw_model.zones[i].eta
-				mdot = evol[i]["ifr"][-1] - evol[i]["sfr"][-1] * (1 + eta -
-					mu[i] - recycling)
-				evol[i]["mgas"].append(evol[i]["mgas"][-1] + mdot * self.dt)
-				if evol[i]["mgas"][-1] < 1e-12: evol[i]["mgas"][-1] = 1e-12
-				evol[i]["ifr"].append(self.mw_model.zones[i].func(time) * 1.0e9)
-				if callable(self.mw_model.zones[i].tau_star):
-					tau_star = self.mw_model.zones[i].tau_star(time,
-						evol[i]["mgas"][-1])
-				else:
-					tau_star = self.mw_model.zones[i].tau_star
-				evol[i]["sfr"].append(evol[i]["mgas"][-1] / tau_star)
-				evol[i]["tau_star"].append(tau_star)
-				evol[i]["mstar"].append(evol[i]["mstar"][-1] +
-					evol[i]["sfr"][-1] * (1 - recycling) * self.dt)
-				evol[i]["ofr"].append(evol[i]["sfr"][-1] * eta)
-				evol[i]["vgas"].append(vgas[i])
-				evol[i]["time"].append(time + self.dt)
-			time += self.dt
-			sys.stdout.write("\rt = %.2f Gyr" % (time))
-		sys.stdout.write("\n")
-		return evol
-
-
-	def normalize(self, recycling = 0.4, tolerance = 0.005):
-		print("Normalizing....")
-		while True:
-			evol = self.evolve(recycling = recycling)
-			mstar = sum([evol[i]["mstar"][-1] for i in range(len(evol))])
-			print("MW: %.3e" % (M_STAR_MW))
-			print("Model: %.3e" % (mstar))
-			ratio = M_STAR_MW / mstar
-			success = abs(ratio - 1) < tolerance
-			if success:
-				break
-			else:
-				ratio = M_STAR_MW / mstar
-				for i in range(len(self.mw_model._evolution._evol)):
-					self.mw_model._evolution._evol[i].norm *= ratio
-				print(ratio)
-		self._velocities = self.mw_model.n_zones * [None]
-		for i in range(self.mw_model.n_zones):
-			self._velocities[i] = interp_scheme_1d(
-				evol[i]["time"], evol[i]["vgas"])
-
-	# def normalize(self, recycling = 0.4, tolerance = 0.05):
-	# 	n_relevant_zones = int(MAX_SF_RADIUS / self.dr)
-	# 	print("Normalizing....")
-	# 	expectations = []
-	# 	for i in range(self.mw_model.n_zones):
-	# 		expectations.append(
-	# 			gradient(self.dr * (i + 0.5)) * np.pi *
-	# 			self.dr**2 * ((i + 1)**2 - i**2)
-	# 		)
-	# 	tot = sum(expectations)
-	# 	for i in range(self.mw_model.n_zones):
-	# 		expectations[i] *= M_STAR_MW / tot
-	# 	while True:
-	# 		evol = self.evolve(recycling = recycling)
-	# 		ratios = []
-	# 		success = True
-	# 		for i in range(self.mw_model.n_zones):
-	# 			ratios.append(evol[i]["mstar"][-1] / expectations[i])
-	# 			if i < n_relevant_zones:
-	# 				success &= abs(ratios[-1] - 1) < tolerance
-	# 			else: pass
-	# 		if success:
-	# 			break
-	# 		else:
-	# 			print("===================")
-	# 			for i in range(len(self.mw_model._evolution._evol)):
-	# 				self.mw_model._evolution._evol[i].norm /= ratios[i]
-	# 				print("R = %.2f kpc ; factor = %.3e" % (
-	# 					self.dr * (i + 0.5), ratios[i]))
-	# 	self._velocities = self.mw_model.n_zones * [None]
-	# 	for i in range(self.mw_model.n_zones):
-	# 		self._velocities[i] = interp_scheme_1d(
-	# 			evol[i]["time"], evol[i]["vgas"])
-
-
-
-
-
-
+				return 0
+		else:
+			# without this seemingly useless if-statement, both inward and
+			# outward components write to the output file, resulting in
+			# duplicate entries of zero velocity.
+			if self.inward: self.write(ism_state["time"], [self.radius], [0])
+			return 0
 
 # class amd_ifrmode(amd):
 
-# 	def __init__(self, *args, **kwargs):
-# 		super().__init__(*args, **kwargs)
-# 		self._last_output = None
-
-# 	@property
-# 	def last_output(self):
-# 		return self._last_output
-
-# 	@last_output.setter
-# 	def last_output(self, value):
-# 		if isinstance(value, vice.multioutput):
-# 			self._last_output = value
-# 			self._outflow_rates = []
-# 			self._gas_masses = []
-# 			for i in range(self.mw_model.n_zones):
-# 				self._outflow_rates.append(interp_scheme_1d(
-# 					self._last_output.zones["zone%d" % (i)].history["time"],
-# 					self._last_output.zones["zone%d" % (i)].history["ofr"]))
-# 				self._gas_masses.append(interp_scheme_1d(
-# 					self._last_output.zones["zone%d" % (i)].history["time"],
-# 					self._last_output.zones["zone%d" % (i)].history["mgas"]))
-# 		else:
-# 			raise TypeError("Must be of type vice.multioutput")
-
-
-
 # 	def __call__(self, time):
 # 		radii = [self.dr * i for i in range(self.mw_model.n_zones)]
-# 		if self._last_output is None:
-# 			vgas = len(radii) * [0.]
-# 			return [radii, vgas]
-# 		else: pass
 # 		vgas = []
-# 		timestep = int(time / self.dt)
-# 		sfr = 0
+# 		for i in range(len(radii)):
+# 			vgas.append(self._velocities[i](time))
+# 		self.write(time, radii, vgas)
+# 		return [radii, vgas]
+
+
+# 	def evolve(self, recycling = 0.4):
 # 		if callable(self.beta_phi_in):
 # 			beta_phi_in = self.beta_phi_in
 # 		else:
@@ -444,54 +329,154 @@ class amd_ifrmode(amd):
 # 			beta_phi_out = self.beta_phi_out
 # 		else:
 # 			beta_phi_out = lambda r, t: self.beta_phi_out
-# 		for i in range(len(radii)):
-# 			if radii[i] > MAX_SF_RADIUS:
-# 				vgas.append(0)
+# 		n_zones = self.mw_model.n_zones
+# 		evol = []
+# 		for i in range(n_zones):
+# 			if callable(self.mw_model.zones[i].eta):
+# 				eta = self.mw_model.zones[i].eta(time)
 # 			else:
-# 				ifr = self.mw_model.zones[i].func(time) * 1.0e9
-# 				ofr = self._outflow_rates[i](time) * 1.0e9
-# 				mgas = self._gas_masses[i](time)
-# 				bphiin = beta_phi_in(radii[i], time)
-# 				bphiout = beta_phi_out(radii[i], time)
-# 				v = ofr * (1 - bphiout) - ifr * (1 - bphiin)
-# 				v *= R / mgas
-# 				vgas.append(v)
-# 		return [radii, vgas]
+# 				eta = self.mw_model.zones[i].eta
+# 			if callable(self.mw_model.zones[i].tau_star):
+# 				tau_star = self.mw_model.zones[i].tau_star(0,
+# 					self.mw_model.zones[i].Mg0)
+# 			else:
+# 				tau_star = self.mw_model.zones[i].tau_star
+# 			sfr = self.mw_model.zones[i].Mg0 / tau_star
+# 			ofr = eta * sfr
+# 			evol.append({
+# 				"time": [0],
+# 				"ifr": [self.mw_model.zones[i].func(0)],
+# 				"mgas": [self.mw_model.zones[i].Mg0],
+# 				"tau_star": [tau_star],
+# 				"mstar": [0],
+# 				"sfr": [sfr],
+# 				"ofr": [ofr],
+# 				"vgas": [0]
+# 			})
 
-	# def ismevol(self, zone, Mg0 = 0, recycling = 0.4):
-	# 	results = {
-	# 		"time": [0],
-	# 		"mgas": [Mg0],
-	# 		"mstar": [0]
-	# 	}
-	# 	radius = self.dr * (zone + 0.5)
-	# 	# area = np.pi * self.dr**2 * ((zone + 1)**2 - zone**2)
-	# 	neighbor = self.mw_model[zone + 1]
-	# 	zone = self.mw_model[zone]
-	# 	results["sfr"] = [Mg0 / zone.tau_star(0, Mg0)]
-	# 	results["ofr"] = [results["sfr"][0] * eta(0)]
-	# 	if callable(zone.eta):
-	# 		eta = zone.eta
-	# 	else:
-	# 		eta = lambda t: zone.eta
-	# 	if callable(self.beta_phi_in):
-	# 		beta_phi_in = self.beta_phi_in
-	# 	else:
-	# 		beta_phi_in = lambda r, t: self.beta_phi_in
-	# 	if callable(self.beta_phi_out):
-	# 		beta_phi_out = self.beta_phi_out
-	# 	else:
-	# 		beta_phi_out = lambda r, t: self.beta_phi_out
-	# 	while results["time"][-1] < END_TIME:
-	# 		time = results["time"][-1]
-	# 		mgas = results["mgas"][-1]
-	# 		ifr = zone.func(time)
-	# 		taustar = zone.tau_star(time, mgas)
-	# 		eta = 
-	# 		sfr = mgas / taustar
-	# 		# dotmgas = ifr
-	# 		# eta = eta(results["time"][-1])
-	# 		results["time"].append(results["time"][-1] + self.dt)
+# 		time = 0
+# 		while time < END_TIME:
+# 			vgas = n_zones * [0.]
+# 			mu = n_zones * [0.]
+# 			if time >= self.onset:
+# 				for i in range(n_zones):
+# 					radius = self.dr * (i + 0.5)
+# 					# if radius < MAX_SF_RADIUS:
+# 					vgas[i] = evol[i]["ofr"][-1] * (
+# 						1 - beta_phi_out(radius, time))
+# 					vgas[i] -= evol[i]["ifr"][-1] * (
+# 						1 - beta_phi_in(radius, time))
+# 					vgas[i] *= radius / evol[i]["mgas"][-1]
+# 					# else:
+# 					# 	vgas[i] = 0
+# 					if abs(vgas[i]) > self.dr / self.dt:
+# 						sgn_vgas = int(vgas[i] > 0) - int(vgas[i] < 0)
+# 						vgas[i] = sgn_vgas * self.dr / self.dt - 1.e9
+# 					else: pass
+# 				for i in range(n_zones):
+# 					radius = self.dr * (i + 0.5)
+# 					if radius < MAX_SF_RADIUS and vgas[i] != 0:
+# 						dlnmgas_dr = (evol[i + 1]["mgas"][-1] - 
+# 							evol[i]["mgas"][-1]) / (
+# 							evol[i]["mgas"][-1] * self.dr)
+# 						if radius + self.dr < MAX_SF_RADIUS:
+# 							dlnvgas_dr = (vgas[i + 1] - vgas[i]) / (
+# 								vgas[i] * self.dr)
+# 						else:
+# 							dlnvgas_dr = 0
+# 						mu[i] = -evol[i]["tau_star"][-1] * vgas[i] * (
+# 							dlnmgas_dr + dlnvgas_dr)
+# 					else:
+# 						mu[i] = 0
+# 					if mu[i] > 10:
+# 						mu[i] = 10
+# 					elif mu[i] < -10:
+# 						mu[i] = -10
+# 					else: pass
+# 			else: pass
+
+# 			for i in range(n_zones):
+# 				if callable(self.mw_model.zones[i].eta):
+# 					eta = self.mw_model.zones[i].eta(time)
+# 				else:
+# 					eta = self.mw_model.zones[i].eta
+# 				mdot = evol[i]["ifr"][-1] - evol[i]["sfr"][-1] * (1 + eta -
+# 					mu[i] - recycling)
+# 				evol[i]["mgas"].append(evol[i]["mgas"][-1] + mdot * self.dt)
+# 				if evol[i]["mgas"][-1] < 1e-12: evol[i]["mgas"][-1] = 1e-12
+# 				evol[i]["ifr"].append(self.mw_model.zones[i].func(time) * 1.0e9)
+# 				if callable(self.mw_model.zones[i].tau_star):
+# 					tau_star = self.mw_model.zones[i].tau_star(time,
+# 						evol[i]["mgas"][-1])
+# 				else:
+# 					tau_star = self.mw_model.zones[i].tau_star
+# 				evol[i]["sfr"].append(evol[i]["mgas"][-1] / tau_star)
+# 				evol[i]["tau_star"].append(tau_star)
+# 				evol[i]["mstar"].append(evol[i]["mstar"][-1] +
+# 					evol[i]["sfr"][-1] * (1 - recycling) * self.dt)
+# 				evol[i]["ofr"].append(evol[i]["sfr"][-1] * eta)
+# 				evol[i]["vgas"].append(vgas[i])
+# 				evol[i]["time"].append(time + self.dt)
+# 			time += self.dt
+# 			sys.stdout.write("\rt = %.2f Gyr" % (time))
+# 		sys.stdout.write("\n")
+# 		return evol
+
+
+# 	def normalize(self, recycling = 0.4, tolerance = 0.005):
+# 		print("Normalizing....")
+# 		while True:
+# 			evol = self.evolve(recycling = recycling)
+# 			mstar = sum([evol[i]["mstar"][-1] for i in range(len(evol))])
+# 			print("MW: %.3e" % (M_STAR_MW))
+# 			print("Model: %.3e" % (mstar))
+# 			ratio = M_STAR_MW / mstar
+# 			success = abs(ratio - 1) < tolerance
+# 			if success:
+# 				break
+# 			else:
+# 				ratio = M_STAR_MW / mstar
+# 				for i in range(len(self.mw_model._evolution._evol)):
+# 					self.mw_model._evolution._evol[i].norm *= ratio
+# 				print(ratio)
+# 		self._velocities = self.mw_model.n_zones * [None]
+# 		for i in range(self.mw_model.n_zones):
+# 			self._velocities[i] = interp_scheme_1d(
+# 				evol[i]["time"], evol[i]["vgas"])
+
+# 	# def normalize(self, recycling = 0.4, tolerance = 0.05):
+# 	# 	n_relevant_zones = int(MAX_SF_RADIUS / self.dr)
+# 	# 	print("Normalizing....")
+# 	# 	expectations = []
+# 	# 	for i in range(self.mw_model.n_zones):
+# 	# 		expectations.append(
+# 	# 			gradient(self.dr * (i + 0.5)) * np.pi *
+# 	# 			self.dr**2 * ((i + 1)**2 - i**2)
+# 	# 		)
+# 	# 	tot = sum(expectations)
+# 	# 	for i in range(self.mw_model.n_zones):
+# 	# 		expectations[i] *= M_STAR_MW / tot
+# 	# 	while True:
+# 	# 		evol = self.evolve(recycling = recycling)
+# 	# 		ratios = []
+# 	# 		success = True
+# 	# 		for i in range(self.mw_model.n_zones):
+# 	# 			ratios.append(evol[i]["mstar"][-1] / expectations[i])
+# 	# 			if i < n_relevant_zones:
+# 	# 				success &= abs(ratios[-1] - 1) < tolerance
+# 	# 			else: pass
+# 	# 		if success:
+# 	# 			break
+# 	# 		else:
+# 	# 			print("===================")
+# 	# 			for i in range(len(self.mw_model._evolution._evol)):
+# 	# 				self.mw_model._evolution._evol[i].norm /= ratios[i]
+# 	# 				print("R = %.2f kpc ; factor = %.3e" % (
+# 	# 					self.dr * (i + 0.5), ratios[i]))
+# 	# 	self._velocities = self.mw_model.n_zones * [None]
+# 	# 	for i in range(self.mw_model.n_zones):
+# 	# 		self._velocities[i] = interp_scheme_1d(
+# 	# 			evol[i]["time"], evol[i]["vgas"])
 
 
 

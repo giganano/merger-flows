@@ -242,6 +242,19 @@ class exponential:
 				type(value)))
 
 
+class logistic(exponential):
+
+	def __init__(self, midpoint = 0, scale = 1, minimum = 0, maximum = 1):
+		super().__init__(norm = 1, timescale = scale)
+		self.midpoint = midpoint
+		self.minimum = minimum
+		self.maximum = maximum
+
+	def __call__(self, x):
+		return self.minimum + (self.maximum - self.minimum) / (
+			1 + super().__call__(x - self.midpoint))
+
+
 class modified_exponential(exponential):
 
 	r"""

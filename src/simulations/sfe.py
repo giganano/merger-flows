@@ -15,7 +15,7 @@ class sfe(J21_sf_law):
 		if self.mode in ["ifr", "gas"]:
 			# arg2 represents the gas supply in Msun
 			sigma_gas = arg2 / self.area
-			if sigma_gas <= 0: return 1.e+12 # avoid ZeroDivisionError
+			if sigma_gas < 1.0e-12: return 1.e+12 # avoid ZeroDivisionError
 			if sigma_gas >= self._CRITICAL_SURFACE_DENSITY_:
 				return molecular
 			else:
@@ -25,7 +25,7 @@ class sfe(J21_sf_law):
 				# print(self._CRITICAL_SURFACE_DENSITY_)
 				# print(self._KS_PLAW_INDEX_)
 				return molecular * (sigma_gas /
-					self._CRITICAL_SURFACE_DENSITY_)**-self._KS_PLAW_INDEX_
+						self._CRITICAL_SURFACE_DENSITY_)**-self._KS_PLAW_INDEX_
 		else:
 			# arg2 represents the star formation rate in Msun/yr
 			sigma_sfr = arg2 / self.area

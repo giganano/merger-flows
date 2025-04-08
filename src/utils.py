@@ -1,4 +1,5 @@
 
+from ._globals import END_TIME
 import numpy as np
 import vice
 import os
@@ -15,9 +16,11 @@ def get_velocity_profile(output, lookback):
 	diff = [abs(_ - time) for _ in output.zones["zone0"].history["time"]]
 	idx = diff.index(min(diff))
 	time = output.zones["zone0"].history["time"][idx]
+	if time > END_TIME: time = END_TIME
 	radii = []
 	vgas = []
 	for i in range(len(raw)):
+		# if abs(raw[i][0] / time - 1) < 1.0e-6:
 		if raw[i][0] == time:
 			radii.append(raw[i][1])
 			vgas.append(raw[i][2])

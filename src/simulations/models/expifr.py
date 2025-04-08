@@ -18,10 +18,13 @@ class expifr(exponential):
 	"""
 
 	def __init__(self, radius, dt = 0.01, dr = 0.1):
+
 		super().__init__(
-			norm = 1 * m.exp(-radius / 6),
+			# norm = 0.5 * m.exp(-radius / 10),
+			norm = 0.4,
 			timescale = self.timescale(radius))
 		self.radius = radius
+		if self.radius >= MAX_SF_RADIUS - dr: self.norm *= 2
 		# self.norm *= normalize(self, gradient, radius, dt = dt, dr = dr)
 
 	def __call__(self, time):
@@ -32,5 +35,5 @@ class expifr(exponential):
 
 	@staticmethod
 	def timescale(radius):
-		return 2 * (1 + m.exp(radius / 4.7))
+		return 2 * m.exp(radius / 4.7)
 
