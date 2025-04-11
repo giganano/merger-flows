@@ -24,6 +24,7 @@ from . import migration
 from . import models
 from .models.normalize import normalize_ifrmode
 from .models.gradient import gradient
+from .models import mergers
 from . import inputs
 from . import sfe
 from .models.utils import get_bin_number, interpolate, modified_exponential
@@ -74,7 +75,7 @@ class diskmodel(vice.milkyway):
 
 	def __init__(self, zone_width = 0.1, timestep_size = 0.01,
 		name = "diskmodel", spec = "static", verbose = True,
-		migration_mode = "diffusion", **kwargs):
+		migration_mode = "diffusion", elements = ["fe", "o"], **kwargs):
 		super().__init__(zone_width = zone_width, name = name,
 			verbose = verbose, **kwargs)
 		if self.zone_width <= 0.2 and self.dt <= 0.02 and self.n_stars >= 6:
@@ -86,13 +87,22 @@ class diskmodel(vice.milkyway):
 			zone_width = zone_width,
 			filename = "%s_analogdata.out" % (self.name),
 			post_process = self.simple)
-		self.evolution = star_formation_history(spec = spec,
-			zone_width = zone_width)
-		if spec in ["expifr"]:
+		# self.evolution = star_formation_history(spec = spec,
+		# 	zone_width = zone_width)
+		kwargs = {
+			"spec": spec,
+			"zone_width": zone_width
+		}
+		if spec in ["expifr", "expifr_gse"]:
 			self.mode = "ifr"
+			x = accretion_history(**kwargs)
+			print(x)
+			self.evolution = x
 		else:
 			self.mode = "sfr"
+			self.evolution = star_formation_history(**kwargs)
 		self.dt = timestep_size
+		self.elements = elements
 
 		for i in range(self.n_zones):
 			if inputs.OUTFLOWS in ["empirical_calib", "J25", "rc25_constant"]:
@@ -119,6 +129,8 @@ class diskmodel(vice.milkyway):
 			area = m.pi * ZONE_WIDTH**2 * ((i + 1)**2 - i**2)
 			self.zones[i].Mg0 = 0
 			self.zones[i].tau_star = sfe.sfe(area, mode = self.mode)
+			self.zones[i].RIa = "exp"
+			self.zones[i].tau_ia = 1.5
 			# if self.mode == "ifr" and zone_width * (i + 0.5) > MAX_SF_RADIUS:
 			# 	self.zones[i].tau_star = float("inf")
 			# else:
@@ -141,8 +153,14 @@ class diskmodel(vice.milkyway):
 				if self.mode == "ifr":
 					for i in range(self.n_zones):
 						for j in range(self.n_zones):
+							if spec == "expifr":
+								obj = gasflows.constant_ifrmode
+							elif spec == "expifr_gse":
+								raise ValueError("Need to set up gas flows.")
+							else:
+								raise ValueError("Bruh.")
 							if abs(i - j) == 1:
-								self.migration.gas[i][j] = gasflows.constant_ifrmode(
+								self.migration.gas[i][j] = obj(
 									i * zone_width,
 									inputs.RADIAL_GAS_FLOW_SPEED,
 									inward = i > j,
@@ -165,13 +183,23 @@ class diskmodel(vice.milkyway):
 				if self.mode == "ifr":
 					for i in range(self.n_zones):
 						for j in range(self.n_zones):
+							if spec == "expifr":
+								bphiin = inputs.RADIAL_GAS_FLOW_BETA_PHI_IN
+							elif spec == "expifr_gse":
+								bphiin = mergers.beta_phi_in_GSE(
+									zone_width * (i + 0.5),
+									dr = zone_width,
+									dt = self.dt)
+							else:
+								raise ValueError("Bruh.")
+							bphiout = inputs.RADIAL_GAS_FLOW_BETA_PHI_OUT
 							if abs(i - j) == 1:
 								self.migration.gas[i][j] = gasflows.amd_ifrmode(
 									i * zone_width,
 									self,
 									inward = i > j,
-									beta_phi_in = inputs.RADIAL_GAS_FLOW_BETA_PHI_IN,
-									beta_phi_out = inputs.RADIAL_GAS_FLOW_BETA_PHI_OUT,
+									beta_phi_in = bphiin,
+									beta_phi_out = bphiout,
 									**kwargs)
 							else: pass
 				else:
@@ -206,35 +234,25 @@ class diskmodel(vice.milkyway):
 		else:
 			pass
 
-		if not m.isinf(inputs.CGM_FINAL_METALLICITY):
-			for i in range(self.n_zones):
-				self.zones[i].Zin = {}
-				for elem in self.zones[i].elements:
-					solar = vice.solar_z[elem]
-					kwargs = {
-						"norm": solar * 10**inputs.CGM_FINAL_METALLICITY,
-						"rise": inputs.CGM_METALLICITY_GROWTH_TIMESCALE,
-						"timescale": float("inf")
-					}
-					self.zones[i].Zin[elem] = modified_exponential(**kwargs)
-		else: pass
-
-		# if self.mode == "ifr": self.radialflow.normalize()
-			# normalize_ifrmode(self, gradient, dr = zone_width,
-			# 	dt = self.zones[0].dt)
-
-		# if self.mode == "ifr":
-		# 	prefactors = normalize_ifrmode(self, gradient,
-		# 		dr = self.zone_width, dt = self.zones[0].dt)
-		# 	for i in range(self.n_zones):
-		# 		self.zones[i].func.norm *= prefactors[i]
-		# else: pass
+		for i in range(self.n_zones):
+			self.zones[i].Zin = {}
+			for elem in self.zones[i].elements:
+				if spec == "expifr_gse":
+					self.zones[i].Zin[elem] = mergers.Zin_with_GSE(
+						zone_width * (i + 0.5),
+						elem,
+						dr = zone_width,
+						dt = self.dt)
+				else:
+					self.zones[i].Zin[elem] = mergers.Zin_CGM(elem)
 
 
 	def run(self, *args, **kwargs):
 		out = super().run(*args, **kwargs)
 		self.migration.stars.close_file()
-		if self.mode == "ifr": self.outfile.close()
+		if self.mode == "ifr" and inputs.RADIAL_GAS_FLOWS is not None:
+			self.outfile.close()
+		else: pass
 		return out
 
 	@classmethod
@@ -259,14 +277,36 @@ class diskmodel(vice.milkyway):
 			The ``diskmodel`` object with the proper settings.
 		"""
 		model = cls(zone_width = config.zone_width,
-			timestep_size = config.timestep_size, **kwargs)
+			timestep_size = config.timestep_size, elements = config.elements,
+			**kwargs)
 		model.n_stars = config.star_particle_density
 		model.bins = config.bins
-		model.elements = config.elements
+		# model.elements = config.elements
 		return model
 
 
-class star_formation_history:
+class evol_spec:
+
+	def __init__(self, spec = "static", zone_width = 0.1):
+		self._radii = []
+		self._evol = []
+		i = 0
+		max_radius = 20 # kpc, defined by ``vice.milkyway`` object.
+		while (i + 1) * zone_width < max_radius:
+			self._radii.append((i + 0.5) * zone_width)
+			self._evol.append({
+					"oscil":		models.insideout_oscil,
+					"static": 		models.static,
+					"insideout": 	models.insideout,
+					"lateburst": 	models.lateburst,
+					"outerburst": 	models.outerburst,
+					"expifr": 		models.expifr,
+					"expifr_gse": 	models.expifr_with_GSE
+				}[spec.lower()]((i + 0.5) * zone_width, dr = zone_width))
+			i += 1
+
+
+class star_formation_history(evol_spec):
 
 	r"""
 	The star formation history (SFH) of the model galaxy. This object will be
@@ -289,23 +329,6 @@ class star_formation_history:
 			Simulation time in Gyr.
 	"""
 
-	def __init__(self, spec = "static", zone_width = 0.1):
-		self._radii = []
-		self._evol = []
-		i = 0
-		max_radius = 20 # kpc, defined by ``vice.milkyway`` object.
-		while (i + 1) * zone_width < max_radius:
-			self._radii.append((i + 0.5) * zone_width)
-			self._evol.append({
-					"oscil":		models.insideout_oscil,
-					"static": 		models.static,
-					"insideout": 	models.insideout,
-					"lateburst": 	models.lateburst,
-					"outerburst": 	models.outerburst,
-					"expifr": 		models.expifr
-				}[spec.lower()]((i + 0.5) * zone_width))
-			i += 1
-
 	def __call__(self, radius, time):
 		# The milkyway object will always call this with a radius in the
 		# self._radii array, but this ensures a continuous function of radius
@@ -319,6 +342,25 @@ class star_formation_history:
 					self._evol[idx + 1](time), radius)
 			else:
 				result = gradient(radius) * interpolate(self._radii[-2],
+					self._evol[-2](time), self._radii[-1], self._evol[-1](time),
+					radius)
+			if result < 0: result = 0
+			return result
+
+
+class accretion_history(evol_spec):
+
+	def __call__(self, radius, time):
+		if radius > MAX_SF_RADIUS:
+			return 0
+		else:
+			idx = get_bin_number(self._radii, radius)
+			if idx != -1:
+				result = interpolate(self._radii[idx],
+					self._evol[idx](time), self._radii[idx + 1],
+					self._evol[idx + 1](time), radius)
+			else:
+				result = interpolate(self._radii[-2],
 					self._evol[-2](time), self._radii[-1], self._evol[-1](time),
 					radius)
 			if result < 0: result = 0

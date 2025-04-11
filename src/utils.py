@@ -5,6 +5,25 @@ import vice
 import os
 
 
+def subsample_stellar_populations(stars, N = 10000, seed = 0):
+	r"""
+	Subsample stellar populations based on their mass.
+	"""
+	np.random.seed(seed = seed)
+	masses = [m * (1 - vice.cumulative_return_fraction(t)) for m, t in zip(
+		stars["mass"], stars["age"])]
+	total_mass = sum(masses)
+	mass_fracs = [m / total_mass for m in masses]
+	indices = np.random.choice(list(range(len(masses))), p = mass_fracs,
+		size = N)
+	results = {}
+	for key in stars.keys():
+		results[key] = [stars[key][i] for i in indices]
+	return vice.dataframe(results)
+
+	# [stars[i] for i in indices]
+
+
 def oh_to_12pluslog(oh, solaro = vice.solar_z["o"], mo = 15.999, Xsun = 0.73):
 	# return 12 + np.log10(mh / mo * solaro * 10**oh)
 	return 12 + np.log10(solaro / (Xsun * mo)) + oh
@@ -47,35 +66,6 @@ def get_velocity_evolution(output, radius, zone_width = 0.1):
 	lookback = [time[-1] - t for t in time]
 	return [lookback, vgas]
 
-
-	# raw = np.genfromtxt("%s_gasvelocities.out" % (output.name))
-	# raw = vice.dataframe({
-	# 	"time": 	raw[:, 0],
-	# 	"radius": 	raw[:, 1],
-	# 	"vgas": 	raw[:, 2]
-	# 	})
-	# diff = [abs(_ - lookback) for _ in output.zones["zone0"].history["lookback"]]
-	# idx = diff.index(min(diff))
-	# time = output.zones["zone0"].history["time"][idx]
-	# raw = raw.filter("time", "==", time)
-	# return [raw["radius"], raw["vgas"]]
-	# raw = np.genfromtxt("%s_gasvelocities.out" % (output.name))
-	# diff = [abs(_ - lookback) for _ in output.zones["zone0"].history["lookback"]]
-	# idx = diff.index(min(diff))
-	# time = output.zones["zone0"].history["time"][idx]
-	# radii = []
-	# vgas = []
-	# if idx < len(output.zones["zone0"].history["time"]) - 1:
-	# 	dt = output.zones["zone0"].history["time"][idx + 1] - time
-	# else:
-	# 	dt = time - output.zones["zone0"].history["time"][idx - 1]
-
-	# indices = np.where(raw[:,0] == time)
-	# if len(indices):
-	# 	radii = [raw[idx][1] for idx in indices]
-	# 	vgas = [raw[idx][2] for idx in indices]
-	# else: pass
-	# return [radii, vgas]
 
 def mu(output, lookback, zone_width = 0.1):
 	radii, vgas = get_velocity_profile(output, lookback)
@@ -151,17 +141,6 @@ def mu_evol(output, radius, zone_width = 0.1):
 			zone.history["z(o)"][idx] * zone_width)
 		mu_o.append(mu)
 	return [lookback, mu_gas, mu_o]
-
-
-# def mu_evolution(output, radius, zone_width = 0.1):
-# 	zone = int(radius / zone_width)
-# 	radius = zone_width * radius # use inner edge of zone
-# 	neighbor = output.zones["zone%d" % (zone + 1)]
-# 	zone = output.zones["zone%d" % (zone)]
-# 	mu_gas = []
-# 	mu_oxygen = []
-# 	time = zone.history["time"]
-# 	for 
 
 
 def boxcarsmoothtrend(xvals, yvals, window = 10):
