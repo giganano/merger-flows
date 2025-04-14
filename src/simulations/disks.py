@@ -95,9 +95,7 @@ class diskmodel(vice.milkyway):
 		}
 		if spec in ["expifr", "expifr_gse"]:
 			self.mode = "ifr"
-			x = accretion_history(**kwargs)
-			print(x)
-			self.evolution = x
+			self.evolution = accretion_history(**kwargs)
 		else:
 			self.mode = "sfr"
 			self.evolution = star_formation_history(**kwargs)
@@ -179,6 +177,34 @@ class diskmodel(vice.milkyway):
 				self.radialflow = gasflows.linear(
 					dvdr = inputs.RADIAL_GAS_FLOW_DVDR,
 					**kwargs)
+			elif inputs.RADIAL_GAS_FLOWS == "amd_pwd":
+				if self.mode == "ifr":
+					mstar_container = gasflows.container()
+					mstar_container.mstar = 0
+					mstar_container.sfrs = self.n_zones * [0.]
+					for i in range(self.n_zones):
+						for j in range(self.n_zones):
+							if spec == "expifr":
+								bphiin = inputs.RADIAL_GAS_FLOW_BETA_PHI_IN
+							elif spec == "expifr_gse":
+								bphiin = mergers.beta_phi_in_GSE(
+									zone_width * (i + 0.5),
+									dr = zone_width,
+									dt = self.dt)
+							else: raise ValueError("Bruh")
+							bphiout = inputs.RADIAL_GAS_FLOW_BETA_PHI_OUT
+							if abs(i - j) == 1:
+								self.migration.gas[i][j] = gasflows.amd_pwd_ifrmode(
+									i * zone_width,
+									self,
+									inward = i > j,
+									mstar_container = mstar_container,
+									gamma = inputs.RADIAL_GAS_FLOW_PWDGAMMA,
+									beta_phi_in = bphiin,
+									beta_phi_out = bphiout,
+									**kwargs)
+							else: pass
+				else: raise ValueError("Bruh")
 			elif inputs.RADIAL_GAS_FLOWS == "angular_momentum_dilution":
 				if self.mode == "ifr":
 					for i in range(self.n_zones):

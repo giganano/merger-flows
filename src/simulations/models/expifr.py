@@ -23,7 +23,8 @@ class expifr(exponential):
 			# norm = 0.5 * m.exp(-radius / 10),
 			# norm = 0.4,
 			# norm = 0.15 * m.exp(-radius / 3.75),
-			norm = 0.5 * m.exp(-radius / 2.),
+			# norm = 0.5 * m.exp(-radius / 2.),
+			norm = 0.3 * m.exp(-radius / 2.5),
 			timescale = self.timescale(radius))
 		self.radius = radius
 		self.norm /= 1 + m.exp((radius - 17) / 1)

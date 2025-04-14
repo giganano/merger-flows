@@ -8,11 +8,14 @@ import os
 
 # --------------- GSE PARAMETERS --------------- #
 GSE_MASS_RATIO = 1/3
-GSE_REFERENCE_MODEL = "%s/../../outputs/expifr/amd/betaphiin0p8" % (
+GSE_REFERENCE_MODEL = "%s/../../outputs/expifr/amd-pwd/base" % (
 	os.path.dirname(os.path.abspath(__file__)))
+# GSE_REFERENCE_MODEL = "%s/../../outputs/expifr/amd/base" % (
+# 	os.path.dirname(os.path.abspath(__file__)))
 GSE_T_ACC = 3.2
 GSE_SIGMA_TIME = 0.5
-GSE_REFERENCE_TIME = GSE_T_ACC - 2 * GSE_SIGMA_TIME
+GSE_REFERENCE_TIME = GSE_T_ACC - GSE_SIGMA_TIME
+GSE_SURFACE_DENSITY_MODE = "exponential"
 
 
 # Approximate GSE final chemistry read off of the best-fit
@@ -79,9 +82,10 @@ class logistic_betaphiin(logistic):
 
 
 RADIAL_GAS_FLOWS = "angular_momentum_dilution" # None turns them off
+# RADIAL_GAS_FLOWS = "amd_pwd"
 # RADIAL_GAS_FLOWS = "constant"
 # RADIAL_GAS_FLOWS = None
-RADIAL_GAS_FLOW_ONSET = 1 # Gyr -- radial flow starts 1 Gyr in
+RADIAL_GAS_FLOW_ONSET = 0.1 # Gyr -- radial flow starts 1 Gyr in
 
 # used when RADIAL_GAS_FLOWS = "constant"
 RADIAL_GAS_FLOW_SPEED = -0.5 # km/s
@@ -95,12 +99,19 @@ RADIAL_GAS_FLOW_DVDR = -0.05
 # RADIAL_GAS_FLOW_BETA_PHI_IN = 0.5
 # RADIAL_GAS_FLOW_BETA_PHI_IN = 0.6
 # RADIAL_GAS_FLOW_BETA_PHI_IN = 0.8
-RADIAL_GAS_FLOW_BETA_PHI_IN = logistic_betaphiin(
+# RADIAL_GAS_FLOW_BETA_PHI_IN = 0.8
+# RADIAL_GAS_FLOW_BETA_PHI_IN = logistic_betaphiin(
+# 	midpoint = 17.5, scale = 2.5,
+# 	minimum = 0.9, maximum = 0.7)
+RADIAL_GAS_FLOW_BETA_PHI_IN = logistic_betaphiin( # works in AMD mode
 	midpoint = 12.5, scale = 2.5,
 	minimum = 0.8, maximum = 1)
+# RADIAL_GAS_FLOW_BETA_PHI_IN = logistic_betaphiin( # trying for AMD+PWD mode
+# 	midpoint = 12.5, scale = 2.5,
+# 	minimum = 0.9, maximum = 1)
 
 # RADIAL_GAS_FLOW_GSE_BETA_PHI_IN = RADIAL_GAS_FLOW_BETA_PHI_IN
-# RADIAL_GAS_FLOW_GSE_BETA_PHI_IN = 0
+# RADIAL_GAS_FLOW_GSE_BETA_PHI_IN = 0.8
 RADIAL_GAS_FLOW_GSE_BETA_PHI_IN = -0.8
 
 
@@ -109,7 +120,8 @@ RADIAL_GAS_FLOW_GSE_BETA_PHI_IN = -0.8
 RADIAL_GAS_FLOW_BETA_PHI_OUT = 0
 
 # used when RADIAL_GAS_FLOWS = "potential_well_deepening"
-RADIAL_GAS_FLOW_PWDGAMMA = 0.3
+RADIAL_GAS_FLOW_PWDGAMMA = 0.2
+# RADIAL_GAS_FLOW_PWDGAMMA = 0
 
 # used when RADIAL_GAS_FLOWS = "oscillatory"
 RADIAL_GAS_FLOW_MEAN = -0.5

@@ -16,10 +16,13 @@ from vice import ScienceWarning
 import sys
 
 
+class container: pass
+
+
 class driver(interp_scheme_1d):
 
 	def __init__(self, *args, dt = 0.01, **kwargs):
-		super().__init__(*args, **kwargs)
+		inter_scheme_1d.__init__(self, *args, **kwargs)
 		self.dt = dt
 	
 	def __call__(self, x):
@@ -144,7 +147,7 @@ class constant(base):
 
 	def __init__(self, speed, onset = 1, dr = 0.1, dt = 0.01,
 		outfilename = "gasvelocities.out"):
-		super().__init__(onset = onset, dr = dr, dt = dt,
+		base.__init__(self, onset = onset, dr = dr, dt = dt,
 			outfilename = outfilename)
 		self.speed = speed
 
@@ -154,7 +157,7 @@ class constant_ifrmode(constant):
 	def __init__(self, radius, *args, inward = True, **kwargs):
 		self.radius = radius
 		self.inward = inward
-		super().__init__(*args, **kwargs)
+		constant.__init__(self, *args, **kwargs)
 
 	def __call__(self, **ism_state):
 		if ism_state["time"] < self.onset: return 0
@@ -216,7 +219,7 @@ class linear(base):
 
 	def __init__(self, dvdr = -0.1, onset = 1, dr = 0.1, dt = 0.01,
 		outfilename = "gasvelocities.out"):
-		super().__init__(onset = onset, dr = dr, dt = dt,
+		base.__init__(self, onset = onset, dr = dr, dt = dt,
 			outfilename = outfilename)
 		self.dvdr = dvdr
 
@@ -228,18 +231,76 @@ class linear(base):
 		return [radii, vgas]
 
 
-
 class pwd(base):
 
 	def __init__(self, mw_model, gamma = 0.2, onset = 1, dr = 0.1, dt = 0.01,
 		recycling = 0.4, outfilename = "gasvelocities.out"):
-		super().__init__(onset = onset, dr = dr, dt = dt,
+		base.__init__(self, onset = onset, dr = dr, dt = dt,
 			outfilename = outfilename)
 		self.gamma = gamma
 		self.mw_model = mw_model
 		self.recycling = recycling
-		self.evol = evoldata(mw_model, timestep = dt, recycling = recycling)
+		# self.evol = evoldata(mw_model, timestep = dt, recycling = recycling)
 
+
+class pwd_ifrmode(pwd):
+
+	def __init__(self, radius, *args, inward = True, mstar_container = None,
+		**kwargs):
+		self.radius = radius
+		self.inward = inward
+		pwd.__init__(self, *args, **kwargs)
+		if mstar_container is None:
+			self.mstar_container = container()
+			self.mstar_container.mstar = 0
+			self.mstar_container.sfrs = int(MAX_RADIUS / self.dr) * [0.]
+		else:
+			self.mstar_container = mstar_container
+
+	def __call__(self, **ism_state):
+		vgas = self.vgas(**ism_state)
+		if ism_state["time"] < self.onset: return 0
+		if vgas != 0:
+			if (self.inward and vgas < 0) or (not self.inward and vgas > 0 or
+				self.radius == 0):
+				self.write(ism_state["time"], [self.radius], [vgas])
+				frac = self.area_fraction(self.radius, vgas, dr = self.dr)
+				if frac < 0:
+					frac = 0
+				elif frac > 1 - 1.0e-9:
+					frac = 1 - 1.0e-9
+				else: pass
+				return frac
+			else:
+				return 0
+		else:
+			# without this seemingly useless if-statement, both inward and
+			# outward components write to the output file, resulting in
+			# duplicate entries of zero velocity.
+			if self.inward or (not self.inward and self.radius == 0):
+				self.write(ism_state["time"], [self.radius], [0])
+			return 0
+
+	def vgas(self, **ism_state):
+		if self.radius == 0:
+			self.mstar_container.mstar += (1 - self.recycling) * self.dt * sum(
+				self.mstar_container.sfrs)
+		else: pass
+		# self.mstar_container.dm += 1.0e9 * ism_state["sfr"] * self.dt * (1 -
+		# 	self.recycling)
+		idx = int(self.radius / self.dr)
+		self.mstar_container.sfrs[idx] = ism_state["sfr"] * 1.0e9
+		sfr = sum(self.mstar_container.sfrs)
+		if ism_state["time"] < self.onset:
+			vgas = 0
+		else:
+			vgas = -self.radius * self.gamma * sfr * (1 -
+				self.recycling) / self.mstar_container.mstar
+		return vgas
+
+
+
+class pwd_sfrmode(pwd):
 
 	def __call__(self, time):
 		radii = [self.dr * i for i in range(self.mw_model.n_zones)]
@@ -262,7 +323,7 @@ class amd(base):
 
 	def __init__(self, mw_model, beta_phi_in = 0.7, beta_phi_out = 0, onset = 1,
 		dr = 0.1, dt = 0.01, outfilename = "gasvelocities.out"):
-		super().__init__(onset = onset, dr = dr, dt = dt,
+		base.__init__(self, onset = onset, dr = dr, dt = dt,
 			outfilename = outfilename)
 		self.mw_model = mw_model
 		self.beta_phi_in = beta_phi_in
@@ -274,24 +335,26 @@ class amd_ifrmode(amd):
 	def __init__(self, radius, *args, inward = True, **kwargs):
 		self.radius = radius
 		self.inward = inward
-		super().__init__(*args, **kwargs)
+		amd.__init__(self, *args, **kwargs)
 
 	def __call__(self, **ism_state):
 		if ism_state["time"] < self.onset: return 0
-		if callable(self.beta_phi_in):
-			beta_phi_in = self.beta_phi_in(self.radius, ism_state["time"])
-		else:
-			beta_phi_in = self.beta_phi_in
-		if callable(self.beta_phi_out):
-			beta_phi_out = self.beta_phi_out(self.radius, ism_state["time"])
-		else:
-			beta_phi_out = self.beta_phi_out
-		vgas = ism_state["ofr"] / ism_state["mgas"] * (1 - beta_phi_out)
-		vgas -= ism_state["ifr"] / ism_state["mgas"] * (1 - beta_phi_in)
-		vgas *= 1e9 # kpc/yr -> kpc/Gyr ~ km/s
-		vgas *= self.radius
+		# if callable(self.beta_phi_in):
+		# 	beta_phi_in = self.beta_phi_in(self.radius, ism_state["time"])
+		# else:
+		# 	beta_phi_in = self.beta_phi_in
+		# if callable(self.beta_phi_out):
+		# 	beta_phi_out = self.beta_phi_out(self.radius, ism_state["time"])
+		# else:
+		# 	beta_phi_out = self.beta_phi_out
+		# vgas = ism_state["ofr"] / ism_state["mgas"] * (1 - beta_phi_out)
+		# vgas -= ism_state["ifr"] / ism_state["mgas"] * (1 - beta_phi_in)
+		# vgas *= 1e9 # kpc/yr -> kpc/Gyr ~ km/s
+		# vgas *= self.radius
+		vgas = self.vgas(**ism_state)
 		if vgas != 0:
-			if (self.inward and vgas < 0) or (not self.inward and vgas > 0):
+			if (self.inward and vgas < 0) or (not self.inward and vgas > 0 or
+				self.radius == 0):
 				self.write(ism_state["time"], [self.radius], [vgas])
 				frac = self.area_fraction(self.radius, vgas, dr = self.dr)
 				if frac < 0:
@@ -306,8 +369,43 @@ class amd_ifrmode(amd):
 			# without this seemingly useless if-statement, both inward and
 			# outward components write to the output file, resulting in
 			# duplicate entries of zero velocity.
-			if self.inward: self.write(ism_state["time"], [self.radius], [0])
+			if self.inward or (not self.inward and self.radius == 0):
+				self.write(ism_state["time"], [self.radius], [0])
 			return 0
+
+	def vgas(self, **ism_state):
+		if ism_state["time"] < self.onset: return 0
+		if callable(self.beta_phi_in):
+			beta_phi_in = self.beta_phi_in(self.radius, ism_state["time"])
+		else:
+			beta_phi_in = self.beta_phi_in
+		if callable(self.beta_phi_out):
+			beta_phi_out = self.beta_phi_out(self.radius, ism_state["time"])
+		else:
+			beta_phi_out = self.beta_phi_out
+		vgas = ism_state["ofr"] / ism_state["mgas"] * (1 - beta_phi_out)
+		vgas -= ism_state["ifr"] / ism_state["mgas"] * (1 - beta_phi_in)
+		vgas *= 1e9 # kpc/yr -> kpc/Gyr ~ km/s
+		vgas *= self.radius
+		return vgas
+		# if vgas != 0:
+		# 	if (self.inward and vgas < 0) or (not self.inward and vgas > 0):
+		# 		self.write(ism_state["time"], [self.radius], [vgas])
+		# 		frac = self.area_fraction(self.radius, vgas, dr = self.dr)
+		# 		if frac < 0:
+		# 			frac = 0
+		# 		elif frac > 1 - 1.0e-9:
+		# 			frac = 1 - 1.0e-9
+		# 		else: pass
+		# 		return frac
+		# 	else:
+		# 		return 0
+		# else:
+		# 	# without this seemingly useless if-statement, both inward and
+		# 	# outward components write to the output file, resulting in
+		# 	# duplicate entries of zero velocity.
+		# 	if self.inward: self.write(ism_state["time"], [self.radius], [0])
+		# 	return 0
 
 # class amd_ifrmode(amd):
 
@@ -562,11 +660,52 @@ class amd_sfrmode(amd):
 		return dvdr
 
 
+class amd_pwd_ifrmode(amd_ifrmode, pwd_ifrmode):
+
+	def __init__(self, radius, mw_model, inward = True,
+		mstar_container = None, gamma = 0.2, recycling = 0.4,
+		beta_phi_in = 0.7, beta_phi_out = 0,
+		onset = 1, dr = 0.1, dt = 0.01,
+		outfilename = "gasvelocities.out"):
+		amd_ifrmode.__init__(self, radius, mw_model, inward = inward,
+			beta_phi_in = beta_phi_in, beta_phi_out = beta_phi_out,
+			onset = onset, dr = dr, dt = dt, outfilename = outfilename)
+		pwd_ifrmode.__init__(self, radius, mw_model, inward = inward,
+			mstar_container = mstar_container, gamma = gamma,
+			recycling = recycling,
+			onset = onset, dr = dr, dt = dt, outfilename = None)
+
+	def __call__(self, **ism_state):
+		vgas = amd_ifrmode.vgas(self, **ism_state)
+		vgas += pwd_ifrmode.vgas(self, **ism_state)
+		if ism_state["time"] < self.onset: return 0
+		if vgas != 0:
+			if (self.inward and vgas < 0) or (not self.inward and vgas > 0 or
+				self.radius == 0):
+				self.write(ism_state["time"], [self.radius], [vgas])
+				frac = self.area_fraction(self.radius, vgas, dr = self.dr)
+				if frac < 0:
+					frac = 0
+				elif frac > 1 - 1.0e-9:
+					frac = 1 - 1.0e-9
+				else: pass
+				return frac
+			else:
+				return 0
+		else:
+			# without this seemingly useless if-statement, both inward and
+			# outward components write to the output file, resulting in
+			# duplicate entries of zero velocity.
+			if self.inward or (not self.inward and self.radius == 0):
+				self.write(ism_state["time"], [self.radius], [0])
+			return 0
+
+
 class ora(base):
 
 	def __init__(self, mw_model, onset = 1, dr = 0.1, dt = 0.01,
 		outfilename = "gasvelocities.out"):
-		super().__init__(onset = onset, dr = dr, dt = dt,
+		base.__init__(self, onset = onset, dr = dr, dt = dt,
 			outfilename = outfilename)
 		if isinstance(mw_model, vice.milkyway):
 			self.mw_model = mw_model

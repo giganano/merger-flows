@@ -33,21 +33,24 @@ class GSE(gaussian):
 		# print(self.radius, self.amplitude)
 
 	def compute_norm(self, dr = 0.1):
-		# Exponentially declining surface density
-		scale_radius = 3.75 # kpc
-		norm = self.mgas / (scale_radius**2 * self.sigma_time)
-		norm /= (2 * m.pi)**(3/2)
-		norm *= m.exp(-self.radius / 2.5)
-		norm *= 1.0e-9
-		norm /= 1 + m.exp((self.radius - 17) / 1)
-		return norm
-
-		# Constant surface density
-		# norm = self.mgas / (MAX_SF_RADIUS**2 * self.sigma_time)
-		# norm /= m.sqrt(2) * m.pi**(3/2)
-		# norm *= 1.0e-9
-		# norm /= 1 + m.exp((self.radius - 17) / 1)
-		# return norm
+		if inputs.GSE_SURFACE_DENSITY_MODE == "exponential":
+			# Exponentially declining surface density
+			scale_radius = 2.5 # kpc
+			norm = self.mgas / (scale_radius**2 * self.sigma_time)
+			norm /= (2 * m.pi)**(3/2)
+			norm *= m.exp(-self.radius / scale_radius)
+			norm *= 1.0e-9
+			norm /= 1 + m.exp((self.radius - 17) / 1)
+			return norm
+		elif inputs.GSE_SURFACE_DENSITY_MODE == "constant":
+			# Constant surface density
+			norm = self.mgas / (MAX_SF_RADIUS**2 * self.sigma_time)
+			norm /= m.sqrt(2) * m.pi**(3/2)
+			norm *= 1.0e-9
+			norm /= 1 + m.exp((self.radius - 17) / 1)
+			return norm
+		else:
+			raise ValueError("Bruh")
 
 		# Gaussian -> may need debugged?
 		# mass_per_length = m.exp(-(self.radius - self.r_acc)**2 / (
