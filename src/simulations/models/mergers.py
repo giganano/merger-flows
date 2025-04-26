@@ -35,7 +35,8 @@ class GSE(gaussian):
 	def compute_norm(self, dr = 0.1):
 		if inputs.GSE_SURFACE_DENSITY_MODE == "exponential":
 			# Exponentially declining surface density
-			scale_radius = 2. # kpc
+			scale_radius = inputs.GSE_SCALE_RADIUS # base value: 2 kpc
+			# scale_radius = 2. # kpc
 			# scale_radius = 2.5 # kpc
 			# scale_radius = 4 # kpc
 			norm = self.mgas / (scale_radius**2 * self.sigma_time)
