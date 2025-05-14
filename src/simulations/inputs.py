@@ -16,7 +16,7 @@ GSE_T_ACC = 3.2
 GSE_SIGMA_TIME = 0.5
 GSE_REFERENCE_TIME = GSE_T_ACC - GSE_SIGMA_TIME
 GSE_SURFACE_DENSITY_MODE = "exponential"
-GSE_SCALE_RADIUS = 2 # kpc, 2 is base-line value so far
+GSE_SCALE_RADIUS = 6 # kpc, 2 is base-line value so far
 
 
 # Approximate GSE final chemistry read off of the best-fit
