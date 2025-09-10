@@ -12,23 +12,28 @@ GSE_MASS_RATIO = 1 / 3
 # 	os.path.dirname(os.path.abspath(__file__)))
 GSE_REFERENCE_MODEL = "%s/../../outputs/expifr/amd/base" % (
 	os.path.dirname(os.path.abspath(__file__)))
-GSE_T_ACC = 3.2
+GSE_T_ACC = 7.2
 GSE_SIGMA_TIME = 0.5
 GSE_REFERENCE_TIME = GSE_T_ACC - GSE_SIGMA_TIME
 GSE_SURFACE_DENSITY_MODE = "exponential"
-GSE_SCALE_RADIUS = 6 # kpc, 2 is base-line value so far
+GSE_SCALE_RADIUS = 2 # kpc, 2 is base-line value so far
 
 
 # Approximate GSE final chemistry read off of the best-fit
 # figure from my dwarf galaxy archaeology paper
-GSE_FEH = -0.5
-GSE_OH = -0.45
-GSE_MGH = -0.45
+# GSE_FEH = -0.5
+# GSE_OH = -0.45
+# GSE_MGH = -0.45
 
 # metal-poor GSE
 # GSE_FEH = -1.5
 # GSE_OH = -1.45
 # GSE_MGH = -1.45
+
+# metal-free GSE
+GSE_FEH = -float("inf")
+GSE_OH = -float("inf")
+GSE_MGH = -float("inf")
 
 
 
@@ -51,9 +56,11 @@ SFROSCIL_PHASE = 0 # perfectly in phase
 
 # --------------- YIELDS --------------- #
 YIELDSOLAR = 1
-# FE_CC_FRAC = 0.35
-FE_CC_FRAC = 0.25
+FE_CC_FRAC = 0.35
+# FE_CC_FRAC = 0.25
 METDEPYIELDS = False
+FE_CC_MODIFIER = 10**-0.05
+FE_IA_MODIFIER = 10**-0.05
 
 
 
@@ -112,7 +119,7 @@ RADIAL_GAS_FLOW_BETA_PHI_IN = logistic_betaphiin( # works in AMD mode
 # 	minimum = 0.9, maximum = 1)
 
 # RADIAL_GAS_FLOW_GSE_BETA_PHI_IN = RADIAL_GAS_FLOW_BETA_PHI_IN
-RADIAL_GAS_FLOW_GSE_BETA_PHI_IN = -0.8
+RADIAL_GAS_FLOW_GSE_BETA_PHI_IN = 0.8
 
 
 # def RADIAL_GAS_FLOW_BETA_PHI_IN(r, t):
@@ -153,6 +160,8 @@ vice.yields.sneia.settings["mg"] = 0
 vice.yields.ccsne.settings["fe"] = FE_CC_FRAC * YIELDSOLAR * vice.solar_z["fe"]
 vice.yields.sneia.settings["fe"] = (
 	1 - FE_CC_FRAC) * YIELDSOLAR * vice.solar_z["fe"]
+vice.yields.ccsne.settings["fe"] *= FE_CC_MODIFIER
+vice.yields.sneia.settings["fe"] *= FE_IA_MODIFIER
 
 
 class metdepyield:

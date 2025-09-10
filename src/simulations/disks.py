@@ -26,6 +26,7 @@ from .models.normalize import normalize_ifrmode
 from .models.gradient import gradient
 from .models import mergers
 from . import inputs
+# from . import nonmetalyields
 from . import sfe
 from .models.utils import get_bin_number, interpolate, modified_exponential
 from .models.gradient import gradient
