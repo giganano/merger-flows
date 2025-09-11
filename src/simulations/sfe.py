@@ -5,8 +5,8 @@ from . import inputs
 
 class sfe(J21_sf_law):
 
-	# _CRITICAL_SURFACE_DENSITY_ = 1e8 # Msun/kpc^2
-	_CRITICAL_SURFACE_DENSITY_ = 1e6 # Msun/kpc^2
+	_CRITICAL_SURFACE_DENSITY_ = 1e8 # Msun/kpc^2
+	# _CRITICAL_SURFACE_DENSITY_ = 1e6 # Msun/kpc^2
 
 	_KS_PLAW_INDEX_ = 1.5 # Kennicutt-Schmidt power-law index
 
@@ -34,7 +34,7 @@ class sfe(J21_sf_law):
 				# print(self._CRITICAL_SURFACE_DENSITY_)
 				# print(self._KS_PLAW_INDEX_)
 				result = molecular * (sigma_gas /
-						self._CRITICAL_SURFACE_DENSITY_)**-self._KS_PLAW_INDEX_
+						self._CRITICAL_SURFACE_DENSITY_)**(1 - self._KS_PLAW_INDEX_)
 		else:
 			# arg2 represents the star formation rate in Msun/yr
 			sigma_sfr = arg2 / self.area

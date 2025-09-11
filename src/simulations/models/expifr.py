@@ -18,13 +18,9 @@ class expifr(exponential):
 	"""
 
 	def __init__(self, radius, dt = 0.01, dr = 0.1):
-
 		super().__init__(
-			# norm = 0.5 * m.exp(-radius / 10),
-			# norm = 0.4,
-			# norm = 0.15 * m.exp(-radius / 3.75),
-			# norm = 0.5 * m.exp(-radius / 2.),
-			norm = 0.3 * m.exp(-radius / 2.5),
+			# norm = 0.3 * m.exp(-radius / 2.5), # sigma_crit = 1e6 Msun/kpc^2
+			norm = 0.3 * m.exp(-radius / 2.5), # sigma_crit = 1e8 Msun/kpc^2
 			timescale = self.timescale(radius))
 		self.radius = radius
 		self.norm /= 1 + m.exp((radius - 17) / 1)
