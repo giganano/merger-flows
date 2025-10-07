@@ -12,10 +12,12 @@ GSE_MASS_RATIO = 1 / 3
 # 	os.path.dirname(os.path.abspath(__file__)))
 # GSE_REFERENCE_MODEL = "%s/../../outputs/expifr/amd-pwd/base-highsigmacrit" % (
 # 	os.path.dirname(os.path.abspath(__file__)))
-# GSE_REFERENCE_MODEL = "%s/../../outputs/expifr/amd/base" % (
-# 	os.path.dirname(os.path.abspath(__file__)))
-GSE_REFERENCE_MODEL = "%s/../../outputs/expifr/amd/base-highsigmacrit" % (
+GSE_REFERENCE_MODEL = "%s/../../outputs/expifr/amd/base-highres" % (
 	os.path.dirname(os.path.abspath(__file__)))
+# GSE_REFERENCE_MODEL = "%s/../../outputs/expifr/amd/base-highsigmacrit" % (
+# 	os.path.dirname(os.path.abspath(__file__)))
+# GSE_REFERENCE_MODEL = "%s/../../outputs/expifr/amd/base-nohalo" % (
+# 	os.path.dirname(os.path.abspath(__file__)))
 GSE_T_ACC = 3.2
 GSE_SIGMA_TIME = 0.5
 GSE_REFERENCE_TIME = GSE_T_ACC - GSE_SIGMA_TIME
@@ -42,7 +44,7 @@ GSE_MGH = -float("inf")
 
 
 # --------------- HALO SIMMER-TO-BOIL --------------- #
-HALO_SIMMER_TO_BOIL = True
+HALO_SIMMER_TO_BOIL = False
 HALO_SFE_PREFACTOR = 20
 HALO_SFE_MIDPOINT_TIME = 2
 HALO_SFE_DECAY_TIMESCALE = 0.25
@@ -63,8 +65,10 @@ YIELDSOLAR = 1
 FE_CC_FRAC = 0.35
 # FE_CC_FRAC = 0.25
 METDEPYIELDS = False
-FE_CC_MODIFIER = 10**-0.05
-FE_IA_MODIFIER = 10**-0.05
+# FE_CC_MODIFIER = 10**-0.05
+# FE_IA_MODIFIER = 10**-0.05
+FE_CC_MODIFIER = 1
+FE_IA_MODIFIER = 1
 
 
 
@@ -123,7 +127,7 @@ RADIAL_GAS_FLOW_BETA_PHI_IN = logistic_betaphiin( # works in AMD mode
 # 	minimum = 0.9, maximum = 1)
 
 # RADIAL_GAS_FLOW_GSE_BETA_PHI_IN = RADIAL_GAS_FLOW_BETA_PHI_IN
-RADIAL_GAS_FLOW_GSE_BETA_PHI_IN = +0.4
+RADIAL_GAS_FLOW_GSE_BETA_PHI_IN = -0.6
 
 
 # def RADIAL_GAS_FLOW_BETA_PHI_IN(r, t):
